@@ -51,15 +51,12 @@ FACEBOOK_PAGES = [
     },
 ]
 
-SENT_POSTS_CACHE = set()
-
 
 @app.route("/")
 def home():
-  return "Tourism Auto-Publisher Bot is active! 🚀"
+  return "Test Bot is active! 🚀"
 
 
-# جعل الكود يستجيب لطلبات HEAD و GET معاً وينفذ المهمة فوراً
 @app.route("/check-news", methods=["GET", "HEAD"])
 def check_news():
   if not BOT_TOKEN or not CHANNEL_ID:
@@ -76,11 +73,11 @@ def check_news():
       feed = feedparser.parse(rss_url)
 
       if feed.entries:
+        # جلب أحدث منشور تجريبي مباشرة دون قيود الذاكرة للتأكد من الشكل
         latest_post = feed.entries[0]
-        post_id = latest_post.get("id", latest_post.get("link"))
         post_title = latest_post.get("title", "تحديث جديد من الصفحة")
         post_link = latest_post.get("link", page_url)
-        post_date = latest_post.get("published", "اليوم")
+        post_date = latest_post.get("published", "27 تموز 2026")
 
         media_url = None
         if "summary" in latest_post:
@@ -92,56 +89,54 @@ def check_news():
           if img_match:
             media_url = img_match.group(1)
 
-        if post_id not in SENT_POSTS_CACHE:
-          SENT_POSTS_CACHE.add(post_id)
+        post_text = (
+            f"📷 **المصدر:** {page_name}\n"
+            f"🕒 **تاريخ النشر:** {post_date}\n\n"
+            f"{post_title}\n\n"
+            "يمكنكم متابعة تفاصيل الخبر رسمياً عبر الرابط أدناه:\n"
+            f"🔗 [رابط المنشور الأصلي]({post_link})\n\n"
+            "#أخبار_سياحية #قطاع_السياحة #سوريا_تجمعنا #فعاليات_سياحية"
+        )
 
-          post_text = (
-              f"📷 **المصدر:** {page_name}\n"
-              f"🕒 **تاريخ النشر:** {post_date}\n\n"
-              f"{post_title}\n\n"
-              "يمكنكم متابعة تفاصيل الخبر رسمياً عبر الرابط أدناه:\n"
-              f"🔗 [رابط المنشور الأصلي]({post_link})\n\n"
-              "#أخبار_سياحية #قطاع_السياحة #سوريا_تجمعنا"
-              " #فعاليات_سياحية"
-          )
-
-          if media_url:
-            is_video = media_url.endswith((".mp4", ".mov", ".webm"))
-            if is_video:
-              telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
-              payload = {
-                  "chat_id": CHANNEL_ID,
-                  "video": media_url,
-                  "caption": post_text,
-                  "parse_mode": "Markdown",
-              }
-            else:
-              telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-              payload = {
-                  "chat_id": CHANNEL_ID,
-                  "photo": media_url,
-                  "caption": post_text,
-                  "parse_mode": "Markdown",
-              }
-          else:
-            telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        if media_url:
+          is_video = media_url.endswith((".mp4", ".mov", ".webm"))
+          if is_video:
+            telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
             payload = {
                 "chat_id": CHANNEL_ID,
-                "text": post_text,
+                "video": media_url,
+                "caption": post_text,
                 "parse_mode": "Markdown",
             }
-
-          response = requests.post(telegram_url, json=payload)
-          if response.status_code == 200:
-            results_summary.append(f"Published: {page_name}")
           else:
-            results_summary.append(f"Failed {page_name}: {response.text}")
+            telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+            payload = {
+                "chat_id": CHANNEL_ID,
+                "photo": media_url,
+                "caption": post_text,
+                "parse_mode": "Markdown",
+            }
         else:
-          results_summary.append(f"No new posts for: {page_name}")
+          telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+          payload = {
+              "chat_id": CHANNEL_ID,
+              "text": post_text,
+              "parse_mode": "Markdown",
+          }
+
+        response = requests.post(telegram_url, json=payload)
+        if response.status_code == 200:
+          results_summary.append(f"Test sent: {page_name}")
+        else:
+          results_summary.append(f"Failed {page_name}: {response.text}")
       else:
         results_summary.append(f"Empty feed for: {page_name}")
 
-    return "Check completed. Details: " + " | ".join(results_summary), 200
+    return (
+        "Test check completed successfully. Details: "
+        + " | ".join(results_summary),
+        200,
+    )
 
   except Exception as e:
     return f"An error occurred: {str(e)}", 500
