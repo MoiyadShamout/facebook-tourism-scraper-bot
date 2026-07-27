@@ -8,8 +8,7 @@ app = Flask(__name__)
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID")
 
-# الصفحات الرسمية مع روابط خلاصات RSS العامة والمجانية الموثوقة لفيسبوك
-# نستخدم خدمة RSSHub المفتوحة والمجانية لجلب آخر منشورات الصفحات الحقيقية فوراً
+# الصفحات الرسمية المعتمدة
 FACEBOOK_PAGES = [
     {
         "name": "وزارة السياحة السورية",
@@ -26,6 +25,17 @@ FACEBOOK_PAGES = [
         ),
     },
     {
+        "name": "مديرية السياحة في حماة",
+        "url": (
+            "https://www.facebook.com/p/%D9%85%D8%AF%D9%8A%D8%B1%D9%8A%D8%A9-"
+            "%D8%A7%D9%84%D8%B3%D9%8A%D8%A7%D8%AD%D8%A9-%D9%81%D9%8A-"
+            "%D8%AD%D9%85%D8%A9-100068960592875/"
+        ),
+        "rss_url": (
+            "https://rsshub.app/facebook/page/p/مديرية-السياحة-في-حماة-100068960592875"
+        ),
+    },
+    {
         "name": "مديرية سياحة حلب",
         "url": "https://www.facebook.com/SYRTDALEPPO/",
         "rss_url": "https://rsshub.app/facebook/page/SYRTDALEPPO",
@@ -35,21 +45,32 @@ FACEBOOK_PAGES = [
         "url": "https://www.facebook.com/homs.tourism/",
         "rss_url": "https://rsshub.app/facebook/page/homs.tourism",
     },
+    {
+        "name": "مديرية سياحة اللاذقية",
+        "url": "https://www.facebook.com/profile.php?id=100066607480730",
+        "rss_url": "https://rsshub.app/facebook/page/profile.php?id=100066607480730",
+    },
 ]
 
-# ذاكرة مؤقتة لمنع تكرار نشر نفس المنشور الحقيقي
+# ذاكرة مؤقتة لمنع تكرار نشر نفس المنشور
 SENT_POSTS_CACHE = set()
 
 
 @app.route("/")
 def home():
-  return "Real Facebook Scraping Bot is active and running! 🚀"
+  return "Tourism Auto-Publisher Bot is active! 🚀"
 
 
-@app.route("/check-news")
+@app.route("/check-news", methods=["GET", "HEAD"])
 def check_news():
   if not BOT_TOKEN or not CHANNEL_ID:
-    return "Error: Telegram Token or Channel ID missing", 500
+    return "Error: Token or Channel ID missing", 500
+
+  # إذا كان الطلب من نوع HEAD (الذي يرسله UptimeRobot للاختبار)، نكتفي برد ناجح
+  from flask import request
+
+  if request.method == "HEAD":
+    return "", 200
 
   try:
     results_summary = []
@@ -59,20 +80,16 @@ def check_news():
       page_url = page["url"]
       rss_url = page["rss_url"]
 
-      # قراءة أحدث المنشورات الحقيقية عبر خلاصات الصفحة
       feed = feedparser.parse(rss_url)
 
       if feed.entries:
-        # أخذ أحدث منشور حقيقي تم رصده
         latest_post = feed.entries[0]
         post_id = latest_post.get("id", latest_post.get("link"))
         post_title = latest_post.get("title", "تحديث جديد من الصفحة")
         post_link = latest_post.get("link", page_url)
-        post_date = latest_post.get(
-            "published", "27 تموز 2026"
-        )  # التاريخ الحقيقي للمنشور
+        post_date = latest_post.get("published", "اليوم")
 
-        # استخراج الصورة الحقيقية من محتوى المنشور إن وجدت
+        # استخراج الصورة أو الوسائط إن وجدت في المنشور الحقيقي
         media_url = None
         if "summary" in latest_post:
           import re
@@ -83,11 +100,11 @@ def check_news():
           if img_match:
             media_url = img_match.group(1)
 
-        # التحقق مما إذا كان المنشور قد تم إرساله من قبل لمنع التكرار
+        # التحقق من أن المنشور جديد ولم يتم نشره مسبقاً
         if post_id not in SENT_POSTS_CACHE:
           SENT_POSTS_CACHE.add(post_id)
 
-          # صياغة النص الحقيقي بالكامل والتنسيق الذي طلبته
+          # التنسيق الاحترافي الذي طلبته تماماً
           post_text = (
               f"📷 **المصدر:** {page_name}\n"
               f"🕒 **تاريخ النشر:** {post_date}\n\n"
@@ -98,19 +115,28 @@ def check_news():
               " #فعاليات_سياحية"
           )
 
-          # إرسال الوسائط الحقيقية (صورة أو فيديو) أو إرسال نص إن لم توجد صورة
+          # التحقق مما إذا كانت الوسائط فيديو أو صورة للإرسال بالدالة المناسبة
           if media_url:
-            telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-            payload = {
-                "chat_id": CHANNEL_ID,
-                "photo": media_url,
-                "caption": post_text,
-                "parse_mode": "Markdown",
-            }
+            is_video = media_url.endswith((".mp4", ".mov", ".webm"))
+            if is_video:
+              telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
+              payload = {
+                  "chat_id": CHANNEL_ID,
+                  "video": media_url,
+                  "caption": post_text,
+                  "parse_mode": "Markdown",
+              }
+            else:
+              telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+              payload = {
+                  "chat_id": CHANNEL_ID,
+                  "photo": media_url,
+                  "caption": post_text,
+                  "parse_mode": "Markdown",
+              }
           else:
-            telegram_url = (
-                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-            )
+            # في حال لم توجد صورة، يتم إرسال المنشور كنص منسق ونظيف
+            telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             payload = {
                 "chat_id": CHANNEL_ID,
                 "text": post_text,
@@ -119,17 +145,15 @@ def check_news():
 
           response = requests.post(telegram_url, json=payload)
           if response.status_code == 200:
-            results_summary.append(f"Published real post from: {page_name}")
+            results_summary.append(f"Published: {page_name}")
           else:
-            results_summary.append(
-                f"Failed to send {page_name}: {response.text}"
-            )
+            results_summary.append(f"Failed {page_name}: {response.text}")
         else:
-          results_summary.append(f"No new updates for: {page_name}")
+          results_summary.append(f"No new posts for: {page_name}")
       else:
-        results_summary.append(f"Feed empty for: {page_name}")
+        results_summary.append(f"Empty feed for: {page_name}")
 
-    return "Real check completed. Details: " + " | ".join(results_summary), 200
+    return "Check completed. Details: " + " | ".join(results_summary), 200
 
   except Exception as e:
     return f"An error occurred: {str(e)}", 500
