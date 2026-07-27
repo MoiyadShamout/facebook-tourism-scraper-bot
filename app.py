@@ -8,7 +8,6 @@ app = Flask(__name__)
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID")
 
-# الصفحات الرسمية المعتمدة
 FACEBOOK_PAGES = [
     {
         "name": "وزارة السياحة السورية",
@@ -52,7 +51,6 @@ FACEBOOK_PAGES = [
     },
 ]
 
-# ذاكرة مؤقتة لمنع تكرار نشر نفس المنشور
 SENT_POSTS_CACHE = set()
 
 
@@ -61,16 +59,11 @@ def home():
   return "Tourism Auto-Publisher Bot is active! 🚀"
 
 
+# جعل الكود يستجيب لطلبات HEAD و GET معاً وينفذ المهمة فوراً
 @app.route("/check-news", methods=["GET", "HEAD"])
 def check_news():
   if not BOT_TOKEN or not CHANNEL_ID:
     return "Error: Token or Channel ID missing", 500
-
-  # إذا كان الطلب من نوع HEAD (الذي يرسله UptimeRobot للاختبار)، نكتفي برد ناجح
-  from flask import request
-
-  if request.method == "HEAD":
-    return "", 200
 
   try:
     results_summary = []
@@ -89,7 +82,6 @@ def check_news():
         post_link = latest_post.get("link", page_url)
         post_date = latest_post.get("published", "اليوم")
 
-        # استخراج الصورة أو الوسائط إن وجدت في المنشور الحقيقي
         media_url = None
         if "summary" in latest_post:
           import re
@@ -100,11 +92,9 @@ def check_news():
           if img_match:
             media_url = img_match.group(1)
 
-        # التحقق من أن المنشور جديد ولم يتم نشره مسبقاً
         if post_id not in SENT_POSTS_CACHE:
           SENT_POSTS_CACHE.add(post_id)
 
-          # التنسيق الاحترافي الذي طلبته تماماً
           post_text = (
               f"📷 **المصدر:** {page_name}\n"
               f"🕒 **تاريخ النشر:** {post_date}\n\n"
@@ -115,7 +105,6 @@ def check_news():
               " #فعاليات_سياحية"
           )
 
-          # التحقق مما إذا كانت الوسائط فيديو أو صورة للإرسال بالدالة المناسبة
           if media_url:
             is_video = media_url.endswith((".mp4", ".mov", ".webm"))
             if is_video:
@@ -135,7 +124,6 @@ def check_news():
                   "parse_mode": "Markdown",
               }
           else:
-            # في حال لم توجد صورة، يتم إرسال المنشور كنص منسق ونظيف
             telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
             payload = {
                 "chat_id": CHANNEL_ID,
