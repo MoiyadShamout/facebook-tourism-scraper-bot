@@ -2,7 +2,8 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask
-import traceback # أضفنا هذه المكتبة لطباعة الأخطاء البرمجية بالتفصيل
+import traceback
+from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
 
@@ -24,50 +25,54 @@ def send_to_telegram(message):
   }
   try:
     response = requests.post(url, json=payload, timeout=10)
-    
-    # تعديل احترافي: فحص رد تليجرام بالتفصيل
     if response.status_code == 200:
         print('Telegram: Message sent successfully!', flush=True)
     else:
         print(f'Telegram Error [{response.status_code}]: {response.text}', flush=True)
-        
   except Exception as e:
     print(f'Error sending to Telegram: {e}', flush=True)
 
 
 def check_facebook_page():
   global sent_posts, is_initialized
-  headers = {
-      'User-Agent': (
-          'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) '
-          'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 '
-          'Mobile/15E148 Safari/604.1'
-      )
-  }
 
   try:
-    print(f'Attempting to fetch {FACEBOOK_PAGE_URL}...', flush=True)
-    response = requests.get(FACEBOOK_PAGE_URL, headers=headers, timeout=15)
-    print(f'Facebook Response Status: {response.status_code}', flush=True)
+    print(f'Starting Headless Browser to fetch {FACEBOOK_PAGE_URL}...', flush=True)
+    
+    # --- بداية كود المتصفح الوهمي ---
+    with sync_playwright() as p:
+        # تشغيل متصفح كروم مخفي
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        )
+        page = context.new_page()
+        
+        # الذهاب إلى صفحة فيسبوك
+        page.goto(FACEBOOK_PAGE_URL)
+        
+        print('Page loaded, waiting 5 seconds for JavaScript to render posts...', flush=True)
+        # الانتظار 5 ثوانٍ إجبارية للسماح لفيسبوك بتحميل المنشورات
+        page.wait_for_timeout(5000) 
+        
+        # سحب كود HTML بعد أن تم تشغيله وعرضه
+        html_content = page.content()
+        browser.close()
+    # --- نهاية كود المتصفح الوهمي ---
 
-    if response.status_code != 200:
-      error_msg = f'Failed to fetch page, status: {response.status_code}'
-      print(error_msg, flush=True)
-      return error_msg
-
-    soup = BeautifulSoup(response.text, 'html.parser')
-    posts = soup.find_all('div', {'data-ft': True}) or soup.find_all(
-        'article'
-    )
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # البحث عن المنشورات
+    posts = soup.find_all('div', {'data-ft': True}) or soup.find_all('article')
 
     if not posts:
-      # تعديل احترافي: طباعة أول 500 حرف من صفحة فيسبوك لمعرفة سبب عدم وجود منشورات
-      print('No posts found. Facebook might have blocked the IP or changed layout.', flush=True)
-      print(f'DEBUG HTML SNIPPET: {response.text[:500]}', flush=True)
+      print('No posts found even with Headless Browser.', flush=True)
+      print(f'DEBUG HTML SNIPPET: {html_content[:500]}', flush=True)
       return 'No posts found on the page.'
 
     latest_post = posts[0]
     post_text = latest_post.get_text(separator='\n', strip=True)
+    
     if not post_text:
       print('No text found in the latest post.', flush=True)
       return 'No text found in the latest post.'
@@ -81,15 +86,12 @@ def check_facebook_page():
           sent_posts.add(hash(p_text))
 
       is_initialized = True
-
       message = (
           f'🧪 *[رسالة تجريبية لاختبار عمل البوت]*\n\n'
           f'🚨 *آخر منشور على صفحة الطيران المدني السورية (SyrGACA):*\n\n'
           f'{post_text}'
       )
-      if len(message) > 4000:
-        message = message[:4000] + '...'
-      send_to_telegram(message)
+      send_to_telegram(message[:4000])
       print('Test initialization complete.', flush=True)
       return 'Test successful! Sent latest post.'
 
@@ -99,16 +101,14 @@ def check_facebook_page():
           f'🚨 *خبر جديد من صفحة الطيران المدني السورية (SyrGACA)*\n\n'
           f'{post_text}'
       )
-      if len(message) > 4000:
-        message = message[:4000] + '...'
-      send_to_telegram(message)
+      send_to_telegram(message[:4000])
       print('New post detected and sent to Telegram!', flush=True)
       return 'New post sent!'
 
     print('No new posts found during this check.', flush=True)
     return 'No new posts found.'
+
   except Exception as e:
-    # تعديل احترافي: طباعة مسار الخطأ بالكامل لمعرفة رقم السطر الذي سبب المشكلة
     error_msg = f'Error during scraping: {str(e)}'
     print(error_msg, flush=True)
     print(traceback.format_exc(), flush=True)
@@ -119,7 +119,7 @@ def check_facebook_page():
 @app.route('/check-news')
 def home():
   status_result = check_facebook_page()
-  return f'SyrGACA Facebook Scraper is Running. Status: {status_result}'
+  return f'SyrGACA Facebook Scraper (Headless Mode) is Running. Status: {status_result}'
 
 
 if __name__ == '__main__':
