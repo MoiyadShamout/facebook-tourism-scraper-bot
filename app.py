@@ -5,11 +5,10 @@ from flask import Flask
 
 app = Flask(__name__)
 
-# إعدادات الرابط المستهدف
 FACEBOOK_PAGE_URL = 'https://m.facebook.com/SyrGACA'
 
-# متغير مؤقت لتخزين معرف آخر منشور لمنع التكرار
-last_post_id = None
+sent_posts = set()
+is_initialized = False
 
 
 def send_to_telegram(message):
@@ -33,8 +32,7 @@ def send_to_telegram(message):
 
 
 def check_facebook_page():
-  global last_post_id
-  # استخدام User-Agent وهمي لمتصفح محمول لقراءة نسخة m.facebook بسلاسة
+  global sent_posts, is_initialized
   headers = {
       'User-Agent': (
           'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) '
@@ -49,33 +47,54 @@ def check_facebook_page():
       return f'Failed to fetch page, status: {response.status_code}'
 
     soup = BeautifulSoup(response.text, 'html.parser')
-
-    # البحث عن حاويات المنشورات في نسخة الهواتف
     posts = soup.find_all('div', {'data-ft': True}) or soup.find_all(
         'article'
     )
 
-    if posts:
-      latest_post = posts[0]
-      post_text = latest_post.get_text(separator='\n', strip=True)
-      post_identifier = hash(post_text)
+    if not posts:
+      return 'No posts found on the page.'
 
-      if last_post_id is None:
-        # التخزين الأولي لآخر منشور بدون إرساله عند أول تشغيل
-        last_post_id = post_identifier
-        return 'Bot initialized successfully. Monitoring active.'
+    latest_post = posts[0]
+    post_text = latest_post.get_text(separator='\n', strip=True)
+    if not post_text:
+      return 'No text found in the latest post.'
 
-      if post_identifier != last_post_id:
-        last_post_id = post_identifier
-        # صياغة الرسالة المرسلة لتليجرام
-        message = (
-            f'🚨 *خبر جديد من صفحة الطيران المدني السورية (SyrGACA)*\n\n'
-            f'{post_text}'
-        )
-        if len(message) > 4000:
-          message = message[:4000] + '...'
-        send_to_telegram(message)
-        return 'New post detected and sent to Telegram!'
+    post_id = hash(post_text)
+
+    # مرحلة التجربة الأولى: إرسال أحدث منشور حالي فوراً وتخزين الباقي
+    if not is_initialized:
+      for p in posts:
+        p_text = p.get_text(separator='\n', strip=True)
+        if p_text:
+          sent_posts.add(hash(p_text))
+
+      is_initialized = True
+
+      # إرسال أحدث منشور الآن كرسالة تجريبية للقناة
+      message = (
+          f'🧪 *[رسالة تجريبية لاختبار عمل البوت]*\n\n'
+          f'🚨 *آخر منشور على صفحة الطيران المدني السورية (SyrGACA):*\n\n'
+          f'{post_text}'
+      )
+      if len(message) > 4000:
+        message = message[:4000] + '...'
+      send_to_telegram(message)
+      return (
+          'Test successful! Sent the latest existing post to Telegram.'
+          ' Monitoring active for new posts.'
+      )
+
+    # التشغيل العادي اللاحق: فحص ما إذا كان هناك منشور جديد كلياً
+    if post_id not in sent_posts:
+      sent_posts.add(post_id)
+      message = (
+          f'🚨 *خبر جديد من صفحة الطيران المدني السورية (SyrGACA)*\n\n'
+          f'{post_text}'
+      )
+      if len(message) > 4000:
+        message = message[:4000] + '...'
+      send_to_telegram(message)
+      return 'New post detected and sent to Telegram!'
 
     return 'No new posts found.'
   except Exception as e:
@@ -83,6 +102,7 @@ def check_facebook_page():
 
 
 @app.route('/')
+@app.route('/check-news')
 def home():
   status_result = check_facebook_page()
   return f'SyrGACA Facebook Scraper is Running. Status: {status_result}'
