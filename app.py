@@ -26,9 +26,12 @@ def send_to_telegram(message):
   try:
     response = requests.post(url, json=payload, timeout=10)
     if response.status_code == 200:
-        print('Telegram: Message sent successfully!', flush=True)
+      print('Telegram: Message sent successfully!', flush=True)
     else:
-        print(f'Telegram Error [{response.status_code}]: {response.text}', flush=True)
+      print(
+          f'Telegram Error [{response.status_code}]: {response.text}',
+          flush=True,
+      )
   except Exception as e:
     print(f'Error sending to Telegram: {e}', flush=True)
 
@@ -37,33 +40,36 @@ def check_facebook_page():
   global sent_posts, is_initialized
 
   try:
-    print(f'Starting Headless Browser to fetch {FACEBOOK_PAGE_URL}...', flush=True)
-    
-    # --- بداية كود المتصفح الوهمي ---
+    print(
+        f'Starting Headless Browser to fetch {FACEBOOK_PAGE_URL}...',
+        flush=True,
+    )
+
     with sync_playwright() as p:
-        # تشغيل متصفح كروم مخفي
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        )
-        page = context.new_page()
-        
-        # الذهاب إلى صفحة فيسبوك
-        page.goto(FACEBOOK_PAGE_URL)
-        
-        print('Page loaded, waiting 5 seconds for JavaScript to render posts...', flush=True)
-        # الانتظار 5 ثوانٍ إجبارية للسماح لفيسبوك بتحميل المنشورات
-        page.wait_for_timeout(5000) 
-        
-        # سحب كود HTML بعد أن تم تشغيله وعرضه
-        html_content = page.content()
-        browser.close()
-    # --- نهاية كود المتصفح الوهمي ---
+      browser = p.chromium.launch(headless=True)
+      context = browser.new_context(
+          user_agent=(
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              ' (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          )
+      )
+      page = context.new_page()
+
+      page.goto(FACEBOOK_PAGE_URL)
+
+      print(
+          'Page loaded, waiting 5 seconds for JavaScript to render posts...',
+          flush=True,
+      )
+      page.wait_for_timeout(5000)
+
+      html_content = page.content()
+      browser.close()
 
     soup = BeautifulSoup(html_content, 'html.parser')
-    
-    # البحث عن المنشورات
-    posts = soup.find_all('div', {'data-ft': True}) or soup.find_all('article')
+    posts = soup.find_all('div', {'data-ft': True}) or soup.find_all(
+        'article'
+    )
 
     if not posts:
       print('No posts found even with Headless Browser.', flush=True)
@@ -72,7 +78,7 @@ def check_facebook_page():
 
     latest_post = posts[0]
     post_text = latest_post.get_text(separator='\n', strip=True)
-    
+
     if not post_text:
       print('No text found in the latest post.', flush=True)
       return 'No text found in the latest post.'
@@ -119,7 +125,10 @@ def check_facebook_page():
 @app.route('/check-news')
 def home():
   status_result = check_facebook_page()
-  return f'SyrGACA Facebook Scraper (Headless Mode) is Running. Status: {status_result}'
+  return (
+      'SyrGACA Facebook Scraper (Headless Mode) is Running. Status:'
+      f' {status_result}'
+  )
 
 
 if __name__ == '__main__':
