@@ -1,147 +1,96 @@
 import os
-import feedparser
 import requests
+from bs4 import BeautifulSoup
 from flask import Flask
 
 app = Flask(__name__)
 
-BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID")
+# إعدادات الرابط المستهدف
+FACEBOOK_PAGE_URL = 'https://m.facebook.com/SyrGACA'
 
-FACEBOOK_PAGES = [
-    {
-        "name": "وزارة السياحة السورية",
-        "url": "https://www.facebook.com/SyrianMOT/",
-        "rss_url": "https://rsshub.app/facebook/page/SyrianMOT",
-    },
-    {
-        "name": "مديرية سياحة ريف دمشق",
-        "url": (
-            "https://www.facebook.com/rural.damascus.directorate.of.tourism/"
-        ),
-        "rss_url": (
-            "https://rsshub.app/facebook/page/rural.damascus.directorate.of.tourism"
-        ),
-    },
-    {
-        "name": "مديرية السياحة في حماة",
-        "url": (
-            "https://www.facebook.com/p/%D9%85%D8%AF%D9%8A%D8%B1%D9%8A%D8%A9-"
-            "%D8%A7%D9%84%D8%B3%D9%8A%D8%A7%D8%AD%D8%A9-%D9%81%D9%8A-"
-            "%D8%AD%D9%85%D8%A9-100068960592875/"
-        ),
-        "rss_url": (
-            "https://rsshub.app/facebook/page/p/مديرية-السياحة-في-حماة-100068960592875"
-        ),
-    },
-    {
-        "name": "مديرية سياحة حلب",
-        "url": "https://www.facebook.com/SYRTDALEPPO/",
-        "rss_url": "https://rsshub.app/facebook/page/SYRTDALEPPO",
-    },
-    {
-        "name": "مديرية سياحة حمص",
-        "url": "https://www.facebook.com/homs.tourism/",
-        "rss_url": "https://rsshub.app/facebook/page/homs.tourism",
-    },
-    {
-        "name": "مديرية سياحة اللاذقية",
-        "url": "https://www.facebook.com/profile.php?id=100066607480730",
-        "rss_url": "https://rsshub.app/facebook/page/profile.php?id=100066607480730",
-    },
-]
+# متغير مؤقت لتخزين معرف آخر منشور لمنع التكرار
+last_post_id = None
 
 
-@app.route("/")
-def home():
-  return "Test Bot is active! 🚀"
+def send_to_telegram(message):
+  bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+  chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+
+  if not bot_token or not chat_id:
+    print('Telegram credentials are missing!')
+    return
+
+  url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
+  payload = {
+      'chat_id': chat_id,
+      'text': message,
+      'parse_mode': 'Markdown',
+  }
+  try:
+    requests.post(url, json=payload, timeout=10)
+  except Exception as e:
+    print(f'Error sending to Telegram: {e}')
 
 
-@app.route("/check-news", methods=["GET", "HEAD"])
-def check_news():
-  if not BOT_TOKEN or not CHANNEL_ID:
-    return "Error: Token or Channel ID missing", 500
+def check_facebook_page():
+  global last_post_id
+  # استخدام User-Agent وهمي لمتصفح محمول لقراءة نسخة m.facebook بسلاسة
+  headers = {
+      'User-Agent': (
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) '
+          'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 '
+          'Mobile/15E148 Safari/604.1'
+      )
+  }
 
   try:
-    results_summary = []
+    response = requests.get(FACEBOOK_PAGE_URL, headers=headers, timeout=15)
+    if response.status_code != 200:
+      return f'Failed to fetch page, status: {response.status_code}'
 
-    for page in FACEBOOK_PAGES:
-      page_name = page["name"]
-      page_url = page["url"]
-      rss_url = page["rss_url"]
+    soup = BeautifulSoup(response.text, 'html.parser')
 
-      feed = feedparser.parse(rss_url)
-
-      if feed.entries:
-        # جلب أحدث منشور تجريبي مباشرة دون قيود الذاكرة للتأكد من الشكل
-        latest_post = feed.entries[0]
-        post_title = latest_post.get("title", "تحديث جديد من الصفحة")
-        post_link = latest_post.get("link", page_url)
-        post_date = latest_post.get("published", "27 تموز 2026")
-
-        media_url = None
-        if "summary" in latest_post:
-          import re
-
-          img_match = re.search(
-              r'<img[^>]+src="([^">]+)"', latest_post["summary"]
-          )
-          if img_match:
-            media_url = img_match.group(1)
-
-        post_text = (
-            f"📷 **المصدر:** {page_name}\n"
-            f"🕒 **تاريخ النشر:** {post_date}\n\n"
-            f"{post_title}\n\n"
-            "يمكنكم متابعة تفاصيل الخبر رسمياً عبر الرابط أدناه:\n"
-            f"🔗 [رابط المنشور الأصلي]({post_link})\n\n"
-            "#أخبار_سياحية #قطاع_السياحة #سوريا_تجمعنا #فعاليات_سياحية"
-        )
-
-        if media_url:
-          is_video = media_url.endswith((".mp4", ".mov", ".webm"))
-          if is_video:
-            telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
-            payload = {
-                "chat_id": CHANNEL_ID,
-                "video": media_url,
-                "caption": post_text,
-                "parse_mode": "Markdown",
-            }
-          else:
-            telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-            payload = {
-                "chat_id": CHANNEL_ID,
-                "photo": media_url,
-                "caption": post_text,
-                "parse_mode": "Markdown",
-            }
-        else:
-          telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-          payload = {
-              "chat_id": CHANNEL_ID,
-              "text": post_text,
-              "parse_mode": "Markdown",
-          }
-
-        response = requests.post(telegram_url, json=payload)
-        if response.status_code == 200:
-          results_summary.append(f"Test sent: {page_name}")
-        else:
-          results_summary.append(f"Failed {page_name}: {response.text}")
-      else:
-        results_summary.append(f"Empty feed for: {page_name}")
-
-    return (
-        "Test check completed successfully. Details: "
-        + " | ".join(results_summary),
-        200,
+    # البحث عن حاويات المنشورات في نسخة الهواتف
+    posts = soup.find_all('div', {'data-ft': True}) or soup.find_all(
+        'article'
     )
 
+    if posts:
+      latest_post = posts[0]
+      post_text = latest_post.get_text(separator='\n', strip=True)
+      post_identifier = hash(
+          post_text
+      )  # توليد بصيغة ممتازة للمقارنة السريعة
+
+      if last_post_id is None:
+        # التخزين الأولي لآخر منشور بدون إرساله عند أول تشغيل
+        last_post_id = post_identifier
+        return 'Bot initialized successfully. Monitoring active.'
+
+      if post_identifier != last_post_id:
+        last_post_id = post_identifier
+        # صياغة الرسالة المرسلة لتليجرام
+        message = (
+            f'🚨 *خبر جديد من صفحة الطيران المدني السورية (SyrGACA)*\n\n'
+            f'{post_text}'
+        )
+        if len(message) > 4000:
+          message = message[:4000] + '...'  # تقصير النص إذا كان طويلاً جداً
+        send_to_telegram(message)
+        return 'New post detected and sent to Telegram!'
+
+    return 'No new posts found.'
   except Exception as e:
-    return f"An error occurred: {str(e)}", 500
+    return f'Error during scraping: {str(e)}'
 
 
-if __name__ == "__main__":
-  port = int(os.environ.get("PORT", 10000))
-  app.run(host="0.0.0.0", port=port)
+@app.route('/')
+def home():
+  # كلما قام موقع UptimeRobot بزيارة هذا الرابط، سيفحص السيرفر الصفحة تلقائياً
+  status_result = check_facebook_page()
+  return f'SyrGACA Facebook Scraper is Running. Status: {status_result}'
+
+
+if __name__ == '__main__':
+  port = int(os.environ.get('PORT', 5000))
+  app.run(host='0.0.0.0', port=port)
