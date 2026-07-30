@@ -14,7 +14,7 @@ last_post_id = None
 
 def send_to_telegram(message):
   bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
-  chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+  chat_id = os.environ.get('TELEGRAM_CHANNEL_ID')
 
   if not bot_token or not chat_id:
     print('Telegram credentials are missing!')
@@ -58,9 +58,7 @@ def check_facebook_page():
     if posts:
       latest_post = posts[0]
       post_text = latest_post.get_text(separator='\n', strip=True)
-      post_identifier = hash(
-          post_text
-      )  # توليد بصيغة ممتازة للمقارنة السريعة
+      post_identifier = hash(post_text)
 
       if last_post_id is None:
         # التخزين الأولي لآخر منشور بدون إرساله عند أول تشغيل
@@ -75,7 +73,7 @@ def check_facebook_page():
             f'{post_text}'
         )
         if len(message) > 4000:
-          message = message[:4000] + '...'  # تقصير النص إذا كان طويلاً جداً
+          message = message[:4000] + '...'
         send_to_telegram(message)
         return 'New post detected and sent to Telegram!'
 
@@ -86,7 +84,6 @@ def check_facebook_page():
 
 @app.route('/')
 def home():
-  # كلما قام موقع UptimeRobot بزيارة هذا الرابط، سيفحص السيرفر الصفحة تلقائياً
   status_result = check_facebook_page()
   return f'SyrGACA Facebook Scraper is Running. Status: {status_result}'
 
