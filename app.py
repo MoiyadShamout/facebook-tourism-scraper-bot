@@ -26,7 +26,8 @@ def send_to_telegram(message):
       'parse_mode': 'Markdown',
   }
   try:
-    requests.post(url, json=payload, timeout=10)
+    response = requests.post(url, json=payload, timeout=10)
+    print(f'Telegram Response Status: {response.status_code}')
   except Exception as e:
     print(f'Error sending to Telegram: {e}')
 
@@ -42,9 +43,14 @@ def check_facebook_page():
   }
 
   try:
+    print(f'Attempting to fetch {FACEBOOK_PAGE_URL}...')
     response = requests.get(FACEBOOK_PAGE_URL, headers=headers, timeout=15)
+    print(f'Facebook Response Status: {response.status_code}')
+
     if response.status_code != 200:
-      return f'Failed to fetch page, status: {response.status_code}'
+      error_msg = f'Failed to fetch page, status: {response.status_code}'
+      print(error_msg)
+      return error_msg
 
     soup = BeautifulSoup(response.text, 'html.parser')
     posts = soup.find_all('div', {'data-ft': True}) or soup.find_all(
@@ -52,11 +58,13 @@ def check_facebook_page():
     )
 
     if not posts:
+      print('No posts found on the page or structure changed.')
       return 'No posts found on the page.'
 
     latest_post = posts[0]
     post_text = latest_post.get_text(separator='\n', strip=True)
     if not post_text:
+      print('No text found in the latest post.')
       return 'No text found in the latest post.'
 
     post_id = hash(post_text)
@@ -79,6 +87,7 @@ def check_facebook_page():
       if len(message) > 4000:
         message = message[:4000] + '...'
       send_to_telegram(message)
+      print('Test post sent successfully and posts cached.')
       return (
           'Test successful! Sent the latest existing post to Telegram.'
           ' Monitoring active for new posts.'
@@ -94,11 +103,15 @@ def check_facebook_page():
       if len(message) > 4000:
         message = message[:4000] + '...'
       send_to_telegram(message)
+      print('New post detected and sent to Telegram!')
       return 'New post detected and sent to Telegram!'
 
+    print('No new posts found.')
     return 'No new posts found.'
   except Exception as e:
-    return f'Error during scraping: {str(e)}'
+    error_msg = f'Error during scraping: {str(e)}'
+    print(error_msg)
+    return error_msg
 
 
 @app.route('/')
