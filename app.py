@@ -2,6 +2,7 @@ import os
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask
+import traceback # أضفنا هذه المكتبة لطباعة الأخطاء البرمجية بالتفصيل
 
 app = Flask(__name__)
 
@@ -12,12 +13,8 @@ is_initialized = False
 
 
 def send_to_telegram(message):
-  bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
-  chat_id = os.environ.get('TELEGRAM_CHANNEL_ID')
-
-  if not bot_token or not chat_id:
-    print('Telegram credentials are missing!')
-    return
+  bot_token = '8858016061:AAERfRbsWMI6AAWnNJHYKy89B-7UfWbHo0A'
+  chat_id = '@Moiyad_update_Dam_Airport_Flight'
 
   url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
   payload = {
@@ -27,9 +24,15 @@ def send_to_telegram(message):
   }
   try:
     response = requests.post(url, json=payload, timeout=10)
-    print(f'Telegram Response Status: {response.status_code}')
+    
+    # تعديل احترافي: فحص رد تليجرام بالتفصيل
+    if response.status_code == 200:
+        print('Telegram: Message sent successfully!', flush=True)
+    else:
+        print(f'Telegram Error [{response.status_code}]: {response.text}', flush=True)
+        
   except Exception as e:
-    print(f'Error sending to Telegram: {e}')
+    print(f'Error sending to Telegram: {e}', flush=True)
 
 
 def check_facebook_page():
@@ -43,13 +46,13 @@ def check_facebook_page():
   }
 
   try:
-    print(f'Attempting to fetch {FACEBOOK_PAGE_URL}...')
+    print(f'Attempting to fetch {FACEBOOK_PAGE_URL}...', flush=True)
     response = requests.get(FACEBOOK_PAGE_URL, headers=headers, timeout=15)
-    print(f'Facebook Response Status: {response.status_code}')
+    print(f'Facebook Response Status: {response.status_code}', flush=True)
 
     if response.status_code != 200:
       error_msg = f'Failed to fetch page, status: {response.status_code}'
-      print(error_msg)
+      print(error_msg, flush=True)
       return error_msg
 
     soup = BeautifulSoup(response.text, 'html.parser')
@@ -58,18 +61,19 @@ def check_facebook_page():
     )
 
     if not posts:
-      print('No posts found on the page or structure changed.')
+      # تعديل احترافي: طباعة أول 500 حرف من صفحة فيسبوك لمعرفة سبب عدم وجود منشورات
+      print('No posts found. Facebook might have blocked the IP or changed layout.', flush=True)
+      print(f'DEBUG HTML SNIPPET: {response.text[:500]}', flush=True)
       return 'No posts found on the page.'
 
     latest_post = posts[0]
     post_text = latest_post.get_text(separator='\n', strip=True)
     if not post_text:
-      print('No text found in the latest post.')
+      print('No text found in the latest post.', flush=True)
       return 'No text found in the latest post.'
 
     post_id = hash(post_text)
 
-    # مرحلة التجربة الأولى: إرسال أحدث منشور حالي فوراً وتخزين الباقي
     if not is_initialized:
       for p in posts:
         p_text = p.get_text(separator='\n', strip=True)
@@ -78,7 +82,6 @@ def check_facebook_page():
 
       is_initialized = True
 
-      # إرسال أحدث منشور الآن كرسالة تجريبية للقناة
       message = (
           f'🧪 *[رسالة تجريبية لاختبار عمل البوت]*\n\n'
           f'🚨 *آخر منشور على صفحة الطيران المدني السورية (SyrGACA):*\n\n'
@@ -87,13 +90,9 @@ def check_facebook_page():
       if len(message) > 4000:
         message = message[:4000] + '...'
       send_to_telegram(message)
-      print('Test post sent successfully and posts cached.')
-      return (
-          'Test successful! Sent the latest existing post to Telegram.'
-          ' Monitoring active for new posts.'
-      )
+      print('Test initialization complete.', flush=True)
+      return 'Test successful! Sent latest post.'
 
-    # التشغيل العادي اللاحق: فحص ما إذا كان هناك منشور جديد كلياً
     if post_id not in sent_posts:
       sent_posts.add(post_id)
       message = (
@@ -103,14 +102,16 @@ def check_facebook_page():
       if len(message) > 4000:
         message = message[:4000] + '...'
       send_to_telegram(message)
-      print('New post detected and sent to Telegram!')
-      return 'New post detected and sent to Telegram!'
+      print('New post detected and sent to Telegram!', flush=True)
+      return 'New post sent!'
 
-    print('No new posts found.')
+    print('No new posts found during this check.', flush=True)
     return 'No new posts found.'
   except Exception as e:
+    # تعديل احترافي: طباعة مسار الخطأ بالكامل لمعرفة رقم السطر الذي سبب المشكلة
     error_msg = f'Error during scraping: {str(e)}'
-    print(error_msg)
+    print(error_msg, flush=True)
+    print(traceback.format_exc(), flush=True)
     return error_msg
 
 
